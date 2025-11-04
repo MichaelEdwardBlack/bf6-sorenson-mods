@@ -255,11 +255,15 @@ export function OnPlayerEarnedKill(
     sortedPlayers.forEach((p: Player, index) => {
         p.stats.placement = index + 1;
     })
-    // the best player that is not the current player
-    const bestPlayer = player.equals(sortedPlayers[0]) ? sortedPlayers[1] : sortedPlayers[0];
+    const bestPlayer = sortedPlayers[0];
     // update player ui to show their score compared to the best player in the lobby (that isn't them)
     Object.values(PLAYERS).forEach((p: Player) => {
-        p.updateUI(bestPlayer, POINTS_TO_WIN);
+        if (bestPlayer.equals(p)) {
+            p.updateUI(sortedPlayers[1], POINTS_TO_WIN);
+        }
+        else {
+            p.updateUI(bestPlayer, POINTS_TO_WIN);
+        }
     })
 
     if (player.stats.score >= POINTS_TO_WIN) {
