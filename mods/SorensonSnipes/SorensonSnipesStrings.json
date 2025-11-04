@@ -4,8 +4,8 @@
     "scoreboard_column_3": "Headshots",
     "scoreboard_column_4": "Assists",
     "scoreboard_column_5": "Deaths",
-    "text_st": "st",
-    "text_nd": "nd",
-    "text_rd": "rd",
-    "text_th": "th"
+    "text_num_st_user": "{}st {}",
+    "text_num_nd_user": "{}nd {}",
+    "text_num_rd_user": "{}rd {}",
+    "text_num_th_user": "{}th {}"
 }

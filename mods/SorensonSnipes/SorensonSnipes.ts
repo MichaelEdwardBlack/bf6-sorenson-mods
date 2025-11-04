@@ -52,6 +52,7 @@ interface PlayerStats {
     assists: number;
     revives: number;
     deaths: number;
+    placement: number;
 }
 
 class Player {
@@ -71,13 +72,14 @@ class Player {
             headshots: 0,
             assists: 0,
             revives: 0,
-            deaths: 0
+            deaths: 0,
+            placement: 1,
         }
-        this.ui = new PlayerUI();
+        this.ui = new PlayerUI(modPlayer);
     }
 
-    updateUI(enemyScore: number, targetScore: number) {
-        this.ui.updateScores(this.stats.score, enemyScore, targetScore);
+    updateUI(bestEnemy: Player, targetScore: number) {
+        this.ui.updateScores(this, bestEnemy, targetScore);
     }
 
     equals(otherPlayer: Player) {
@@ -89,10 +91,12 @@ class PlayerUI {
     rootWidget?: mod.UIWidget;
     progressBarWidget?: mod.UIWidget;
     playerIndicatorWidget?: mod.UIWidget;
+    playerPlacementWidget?: mod.UIWidget;
     enemyIndicatorWidget?: mod.UIWidget;
+    enemyPlacementWidget?: mod.UIWidget;
     SCORE_BAR_WIDTH: number = 400;
 
-    constructor() {
+    constructor(player: mod.Player) {
         this.rootWidget = ParseUI({
             name: "root_container",
             type: "Container",
@@ -105,6 +109,36 @@ class PlayerUI {
         });
         
         if (!this.rootWidget) return;
+
+        this.playerPlacementWidget = ParseUI({
+            name: "placement_player",
+            type: "Text",
+            parent: this.rootWidget,
+            textSize: 24,
+            position: [0, 0, 0],
+            size: [100, 50],
+            anchor: mod.UIAnchor.TopLeft,
+            textAnchor: mod.UIAnchor.CenterLeft,
+            bgAlpha: 0,
+            bgFill: mod.UIBgFill.Blur,
+            textLabel: mod.Message(mod.stringkeys.text_num_st_user, 1, player),
+            textColor: COLORS.blue
+        })
+
+        this.enemyPlacementWidget = ParseUI({
+            name: "placement_enemy",
+            type: "Text",
+            parent: this.rootWidget,
+            textSize: 24,
+            position: [0, 0, 0],
+            size: [100, 50],
+            anchor: mod.UIAnchor.TopRight,
+            textAnchor: mod.UIAnchor.CenterRight,
+            bgAlpha: 0,
+            bgFill: mod.UIBgFill.Blur,
+            textLabel: mod.Message(mod.stringkeys.text_num_nd_user, 2, player),
+            textColor: COLORS.red
+        })
         
         this.progressBarWidget = ParseUI({
             name: "progress_bar",
@@ -145,7 +179,9 @@ class PlayerUI {
         });
     }
 
-    updateScores(playerScore: number, enemyScore: number, targetScore: number) {
+    updateScores(player: Player, enemy: Player, targetScore: number) {
+        const playerScore = player.stats.score;
+        const enemyScore = enemy.stats.score;
         if (this.playerIndicatorWidget) {
             const progress = this.SCORE_BAR_WIDTH * playerScore / targetScore;
             mod.SetUIWidgetPosition(this.playerIndicatorWidget, mod.CreateVector(progress, 0, 0));
@@ -153,6 +189,24 @@ class PlayerUI {
         if (this.enemyIndicatorWidget) {
             const progress = this.SCORE_BAR_WIDTH * enemyScore / targetScore;
             mod.SetUIWidgetPosition(this.enemyIndicatorWidget, mod.CreateVector(progress, 0, 0));
+        }
+        if (this.playerPlacementWidget && this.enemyPlacementWidget) {
+            if (player.stats.placement === 1) {
+                mod.SetUITextLabel(this.playerPlacementWidget, mod.Message(mod.stringkeys.text_num_st_user, 1, player.modPlayer));
+                mod.SetUITextLabel(this.enemyPlacementWidget, mod.Message(mod.stringkeys.text_num_nd_user, 2, enemy.modPlayer));
+            }
+            else if (player.stats.placement === 2) {
+                mod.SetUITextLabel(this.playerPlacementWidget, mod.Message(mod.stringkeys.text_num_nd_user, 2, player.modPlayer));
+                mod.SetUITextLabel(this.enemyPlacementWidget, mod.Message(mod.stringkeys.text_num_st_user, 1, enemy.modPlayer));
+            }
+            else if (player.stats.placement === 3) {
+                mod.SetUITextLabel(this.playerPlacementWidget, mod.Message(mod.stringkeys.text_num_rd_user, 3, player.modPlayer));
+                mod.SetUITextLabel(this.enemyPlacementWidget, mod.Message(mod.stringkeys.text_num_st_user, 1, enemy.modPlayer));
+            }
+            else {
+                mod.SetUITextLabel(this.playerPlacementWidget, mod.Message(mod.stringkeys.text_num_th_user, player.stats.placement, player.modPlayer));
+                mod.SetUITextLabel(this.enemyPlacementWidget, mod.Message(mod.stringkeys.text_num_st_user, 1, enemy.modPlayer));
+            }
         }
     }
 }
@@ -198,11 +252,14 @@ export function OnPlayerEarnedKill(
     }
     SCOREBOARD.updatePlayerScoreboard(player);
     const sortedPlayers = Object.values(PLAYERS).sort((a, b) => b.stats.score - a.stats.score); // highest score first
+    sortedPlayers.forEach((p: Player, index) => {
+        p.stats.placement = index + 1;
+    })
     // the best player that is not the current player
     const bestPlayer = player.equals(sortedPlayers[0]) ? sortedPlayers[1] : sortedPlayers[0];
     // update player ui to show their score compared to the best player in the lobby (that isn't them)
     Object.values(PLAYERS).forEach((p: Player) => {
-        p.updateUI(bestPlayer.stats.score, POINTS_TO_WIN);
+        p.updateUI(bestPlayer, POINTS_TO_WIN);
     })
 
     if (player.stats.score >= POINTS_TO_WIN) {
