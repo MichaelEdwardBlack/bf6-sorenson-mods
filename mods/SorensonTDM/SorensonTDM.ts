@@ -95,8 +95,6 @@ export function OnPlayerEarnedKill(
     points++;
     stats.headshots++;
   }
-  // const newTeamScore = mod.GetGameModeScore(team) + points;
-  // mod.SetGameModeScore(team, newTeamScore);
   const isTeam1 = mod.Equals(team, mod.GetTeam(1));
   let teamTotal: number;
   if (isTeam1) {
@@ -110,7 +108,7 @@ export function OnPlayerEarnedKill(
   stats.score += points;
   updateScoreBoardTotal();
   updatePlayerScoreBoard(eventPlayer);
-
+  mod.SetGameModeScore(eventPlayer, stats.score);
   if (teamTotal >= POINTS_TO_WIN) {
     mod.EndGameMode(team);
   }
