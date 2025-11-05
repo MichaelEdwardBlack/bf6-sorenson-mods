@@ -7,5 +7,6 @@
     "text_num_st_user": "{}st {}",
     "text_num_nd_user": "{}nd {}",
     "text_num_rd_user": "{}rd {}",
-    "text_num_th_user": "{}th {}"
+    "text_num_th_user": "{}th {}",
+    "killed_player_with_knife": "killed {} with knife"
 }

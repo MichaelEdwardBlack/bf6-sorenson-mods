@@ -85,6 +85,19 @@ class Player {
     equals(otherPlayer: Player) {
         return (this.id === otherPlayer.id);
     }
+
+    applySniperLoadout() {
+        mod.AddEquipment(this.modPlayer, mod.Weapons.Sniper_M2010_ESR, mod.InventorySlots.PrimaryWeapon);
+        mod.ForceSwitchInventory(this.modPlayer, mod.InventorySlots.PrimaryWeapon);
+        mod.RemoveEquipment(this.modPlayer, mod.InventorySlots.ClassGadget);
+        mod.RemoveEquipment(this.modPlayer, mod.InventorySlots.GadgetOne);
+        mod.RemoveEquipment(this.modPlayer, mod.InventorySlots.GadgetTwo);
+        mod.RemoveEquipment(this.modPlayer, mod.InventorySlots.MiscGadget);
+        mod.RemoveEquipment(this.modPlayer, mod.InventorySlots.SecondaryWeapon);
+        mod.RemoveEquipment(this.modPlayer, mod.InventorySlots.Throwable);
+        mod.AddEquipment(this.modPlayer, mod.Gadgets.Throwable_Throwing_Knife, mod.InventorySlots.Throwable);
+        mod.AddEquipment(this.modPlayer, mod.Gadgets.Throwable_Throwing_Knife, mod.InventorySlots.Throwable);
+    }
 }
 
 class PlayerUI {
@@ -256,13 +269,16 @@ function getPlayerFromModPlayer(modPlayer: mod.Player) {
 // ****************************** GAME LOGIC ****************************** //
 export function OnGameModeStarted() {
     SCOREBOARD = new Scoreboard();
+    mod.SetSpawnMode(mod.SpawnModes.AutoSpawn);
 }
 
 var NumTeams = 0;
-export function OnPlayerJoinGame(player: mod.Player) {
-    const id = mod.GetObjId(player);
-    PLAYERS[id] = new Player(player);
-    mod.SetTeam(player, mod.GetTeam(++NumTeams));
+export function OnPlayerJoinGame(modPlayer: mod.Player) {
+    const id = mod.GetObjId(modPlayer);
+    const player = new Player(modPlayer);
+    PLAYERS[id] = player;
+    mod.SetTeam(modPlayer, mod.GetTeam(++NumTeams));
+    player.applySniperLoadout();
 }
 
 export function OnPlayerDied(
@@ -288,6 +304,9 @@ export function OnPlayerEarnedKill(
     if (mod.EventDeathTypeCompare(eventDeathType, mod.PlayerDeathTypes.Headshot)) {
         player.stats.headshots++;
         player.stats.score++;
+    }
+    else if (mod.EventDeathTypeCompare(eventDeathType, mod.PlayerDeathTypes.Weapon) === false) {
+        mod.DisplayNotificationMessage(mod.Message(mod.stringkeys.killed_player_with_knife, eventOtherPlayer), eventPlayer);
     }
     SCOREBOARD.updatePlayerScoreboard(player);
     const sortedPlayers = Object.values(PLAYERS).sort((a, b) => b.stats.score - a.stats.score); // highest score first
