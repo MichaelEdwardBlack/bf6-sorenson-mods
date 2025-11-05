@@ -100,9 +100,11 @@ export function OnPlayerEarnedKill(
   if (isTeam1) {
     SCORES.team1 += points;
     teamTotal = SCORES.team1;
+    mod.SetGameModeScore(mod.GetTeam(1), SCORES.team1);
   } else {
     SCORES.team2 += points;
     teamTotal = SCORES.team2;
+    mod.SetGameModeScore(mod.GetTeam(2), SCORES.team2);
   }
   stats.kills++;
   stats.score += points;
@@ -110,13 +112,8 @@ export function OnPlayerEarnedKill(
   updatePlayerScoreBoard(eventPlayer);
   mod.SetGameModeScore(eventPlayer, stats.score);
   if (teamTotal >= POINTS_TO_WIN) {
-    mod.SetGameModeScore(mod.GetTeam(1), SCORES.team1);
-    mod.SetGameModeScore(mod.GetTeam(2), SCORES.team2);
     mod.EndGameMode(team);
   }
-  // if (newTeamScore >= mod.GetTargetScore()) {
-  //   mod.EndGameMode(team);
-  // }
 }
 
 export function OnPlayerEarnedKillAssist(eventPlayer: mod.Player, eventOtherPlayer: mod.Player) {
