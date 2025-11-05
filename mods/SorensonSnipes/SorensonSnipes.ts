@@ -61,6 +61,9 @@ class Player {
     stats: PlayerStats;
     team: mod.Team;
     ui: PlayerUI;
+    isHuman: boolean;
+    isAI: boolean;
+    isReady: boolean;
 
     constructor(modPlayer: mod.Player) {
         this.id = mod.GetObjId(modPlayer);
@@ -76,6 +79,15 @@ class Player {
             placement: 1,
         }
         this.ui = new PlayerUI(modPlayer);
+        const isAI = mod.GetSoldierState(modPlayer, mod.SoldierStateBool.IsAISoldier);
+        this.isHuman = !isAI;
+        this.isAI = isAI;
+        if (isAI) {
+            this.isReady = true;
+        }
+        else {
+            this.isReady = false;
+        }
     }
 
     updateUI(bestEnemy: Player, targetScore: number) {
@@ -98,6 +110,11 @@ class Player {
         mod.AddEquipment(this.modPlayer, mod.Gadgets.Throwable_Throwing_Knife, mod.InventorySlots.Throwable);
         mod.AddEquipment(this.modPlayer, mod.Gadgets.Throwable_Throwing_Knife, mod.InventorySlots.Throwable);
     }
+
+    toggleReady() {
+        this.isReady = !this.isReady;
+        this.ui.toggleReady(this);
+    }
 }
 
 class PlayerUI {
@@ -108,6 +125,7 @@ class PlayerUI {
     enemyIndicatorWidget?: mod.UIWidget;
     enemyPlacementWidget?: mod.UIWidget;
     SCORE_BAR_WIDTH: number = 400;
+    readyButton?: mod.UIWidget;
 
     constructor(player: mod.Player) {
        const rootName: string = "ui_root_" + player;
@@ -208,7 +226,6 @@ class PlayerUI {
             player
         )
         this.playerIndicatorWidget = mod.FindUIWidgetWithName(playerIndicatorName);
-        
 
         mod.AddUIImage(
             enemyIndicatorName, // name
@@ -227,6 +244,53 @@ class PlayerUI {
             player
         )
         this.playerIndicatorWidget = mod.FindUIWidgetWithName(enemyIndicatorName);
+
+        mod.AddUIButton(
+            "readyButton", // name
+            mod.CreateVector(-150, 0, 0), // position
+            mod.CreateVector(300, 60, 0), // size
+            mod.UIAnchor.Center, // anchor
+            mod.GetUIRoot(), // parent
+            true, // visible
+            5, // padding
+            COLORS.gray, // bgColor
+            0.8, // bgAlpha
+            mod.UIBgFill.OutlineThick, // bgFill
+            true, // Enabled
+            COLORS.gray, // baseColor green
+            1.0, // baseAlpha
+            mod.CreateVector(0.2, 0.2, 0.2), // disabledColor Gray
+            0.5, // disabledAlpha
+            mod.CreateVector(0.2, 0.7, 0.2), // pressedColor Bright green
+            1.0, // pressedAlpha
+            mod.CreateVector(0.4, 0.7, 0.4), // hoverColor Light green
+            1.0, // hoverAlpha
+            mod.CreateVector(0.5, 0.8, 0.5), // focusColor Lighter green focused
+            1.0, // focusAlpha
+            player
+        );
+        this.readyButton = mod.FindUIWidgetWithName("readyButton");
+        
+        if (!this.readyButton) return;
+        // Add button label
+        mod.AddUIText(
+            "readyButtonLabel", // name
+            mod.CreateVector(0, 0, 0), // position
+            mod.CreateVector(300, 60, 0), // size
+            mod.UIAnchor.Center, // anchor
+            this.readyButton, // parent
+            true, // visible
+            0, // padding
+            mod.CreateVector(0, 0, 0), // bgColor
+            0, // bgAlpha
+            mod.UIBgFill.None, // bgFill
+            mod.Message(mod.stringkeys.ui_button_label_ready), // message
+            24, // textSize
+            COLORS.white, // textColor
+            1.0, // textAlpha
+            mod.UIAnchor.Center, // textAnchor
+            player
+        );
     }
 
     updateScores(player: Player, enemy: Player, targetScore: number) {
@@ -259,6 +323,17 @@ class PlayerUI {
             }
         }
     }
+
+    toggleReady(player: Player) {
+        if (this.readyButton) {
+            if (player.isReady) {
+                mod.SetUIButtonColorBase(this.readyButton, mod.CreateVector(0.3, 0.6, 0.3)) // green
+            }
+            else {
+                mod.SetUIButtonColorBase(this.readyButton, COLORS.gray);
+            }
+        }
+    }
 }
 
 function getPlayerFromModPlayer(modPlayer: mod.Player) {
@@ -267,9 +342,12 @@ function getPlayerFromModPlayer(modPlayer: mod.Player) {
 }
 
 // ****************************** GAME LOGIC ****************************** //
+const isReadyButtonName = "isReadyButton";
 export function OnGameModeStarted() {
     SCOREBOARD = new Scoreboard();
     mod.SetSpawnMode(mod.SpawnModes.AutoSpawn);
+    
+    mod.EnableUIInputMode(true);
 }
 
 var NumTeams = 0;
