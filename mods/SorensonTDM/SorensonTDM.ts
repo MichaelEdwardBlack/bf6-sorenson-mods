@@ -142,7 +142,8 @@ export function OnPlayerDeployed(eventPlayer: mod.Player) {
 
     for (let i = 0; i < numPlayers; i++) {
       const player = mod.ValueInArray(allPlayers, i) as mod.Player;
-      playerPositions.push(mod.GetObjectPosition(player));
+      // playerPositions.push(mod.GetObjectPosition(player));
+      playerPositions.push(mod.GetSoldierState(player, mod.SoldierStateVector.GetPosition));
     }
 
     const numSpawners = 10;
