@@ -9,5 +9,6 @@
     "text_num_rd_user": "{}rd {}",
     "text_num_th_user": "{}th {}",
     "killed_player_with_knife": "killed {} with knife",
-    "ui_button_label_ready": "Ready"
+    "ui_button_label_ready": "Ready {}/{}",
+    "ui_countdown_label": "Game Start in {}"
 }

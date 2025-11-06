@@ -10,6 +10,136 @@ const COLORS = {
 const POINTS_TO_WIN = 30;
 const PLAYERS: {[id: number]: Player} = {};
 var SCOREBOARD: Scoreboard;
+// ****************************** GAME LOGIC ****************************** //
+var GameStarted: boolean = false;
+export async function OnGameModeStarted() {
+    SCOREBOARD = new Scoreboard();
+    const gameCountdown = new GameCountdown();
+    gameCountdown.hide();
+    mod.SetSpawnMode(mod.SpawnModes.AutoSpawn);
+
+    while (!arePlayersReady()) {
+        await mod.Wait(1);
+    }
+
+    gameCountdown.show();
+    await gameCountdown.beginCountdown();
+    gameCountdown.hide();
+    GameStarted = true;
+    enableAllPlayers();
+}
+
+function enableAllPlayers() {
+    const players = Object.values(PLAYERS);
+    players.forEach((player) => {
+        player.enable();
+    })
+}
+
+function arePlayersReady() {
+    const players = Object.values(PLAYERS);
+    let totalHumans = 0;
+    let totalReady = 0;
+    players.forEach((player) => {
+        if (player.isHuman) {
+            totalHumans++;
+            if (player.isReady) {
+                totalReady++;
+            }
+        }
+    });
+    if (totalHumans === 0) return false;
+    players.forEach((player) => {
+        if (player.isHuman) {
+            player.ui.updateReadyLabel(totalReady, totalHumans);
+        }
+    })
+
+    return totalReady >= totalHumans;
+}
+
+var NumTeams = 0;
+export function OnPlayerJoinGame(modPlayer: mod.Player) {
+    const id = mod.GetObjId(modPlayer);
+    const player = new Player(modPlayer);
+    PLAYERS[id] = player;
+    mod.SetTeam(modPlayer, mod.GetTeam(++NumTeams));
+    player.applySniperLoadout();
+    if (!GameStarted) {
+        player.disable()
+    }
+    else {
+        player.enable();
+    }
+}
+
+export function OnPlayerDied(
+    eventPlayer: mod.Player,
+    eventOtherPlayer: mod.Player,
+    eventDeathType: mod.DeathType,
+    eventWeaponUnlock: mod.WeaponUnlock
+) {
+    const player = getPlayerFromModPlayer(eventPlayer);
+    player.stats.deaths++;
+    SCOREBOARD.updatePlayerScoreboard(player);
+}
+
+export function OnPlayerEarnedKill(
+    eventPlayer: mod.Player,
+    eventOtherPlayer: mod.Player,
+    eventDeathType: mod.DeathType,
+    eventWeaponUnlock: mod.WeaponUnlock
+) {
+    const player = getPlayerFromModPlayer(eventPlayer);
+    player.stats.kills++;
+    player.stats.score++;
+    if (mod.EventDeathTypeCompare(eventDeathType, mod.PlayerDeathTypes.Headshot)) {
+        player.stats.headshots++;
+        player.stats.score++;
+    }
+    else if (mod.EventDeathTypeCompare(eventDeathType, mod.PlayerDeathTypes.Weapon) === false) {
+        mod.DisplayNotificationMessage(mod.Message(mod.stringkeys.killed_player_with_knife, eventOtherPlayer), eventPlayer);
+    }
+    SCOREBOARD.updatePlayerScoreboard(player);
+    const sortedPlayers = Object.values(PLAYERS).sort((a, b) => b.stats.score - a.stats.score); // highest score first
+    sortedPlayers.forEach((p: Player, index) => {
+        p.stats.placement = index + 1;
+    })
+    const bestPlayer = sortedPlayers[0];
+    // update player ui to show their score compared to the best player in the lobby (that isn't them)
+    Object.values(PLAYERS).forEach((p: Player) => {
+        if (bestPlayer.equals(p)) {
+            p.updateUI(sortedPlayers[1], POINTS_TO_WIN);
+        }
+        else {
+            p.updateUI(bestPlayer, POINTS_TO_WIN);
+        }
+    })
+
+    if (player.stats.score >= POINTS_TO_WIN) {
+        mod.EndGameMode(player.modPlayer);
+    }
+}
+
+export function OnPlayerEarnedKillAssist(eventPlayer: mod.Player, eventOtherPlayer: mod.Player) {
+    const player = getPlayerFromModPlayer(eventPlayer);
+    player.stats.assists++;
+    SCOREBOARD.updatePlayerScoreboard(player);
+}
+
+export function OnPlayerUIButtonEvent(
+    eventPlayer: mod.Player,
+    eventUIWidget: mod.UIWidget,
+    eventUIButtonEvent: mod.UIButtonEvent
+) {
+    const player = getPlayerFromModPlayer(eventPlayer);
+    const buttonName = mod.GetUIWidgetName(eventUIWidget);
+    if (buttonName === "ui_ready_button_" + eventPlayer) {
+        if (eventUIButtonEvent === mod.UIButtonEvent.ButtonDown) {
+            player.toggleReady();
+        }
+    }
+}
 
 // ****************************** SCOREBOARD ****************************** //
 class Scoreboard {
@@ -115,25 +245,46 @@ class Player {
         this.isReady = !this.isReady;
         this.ui.toggleReady(this);
     }
+
+    disable() {
+        if (this.isAI) {
+            mod.AIIdleBehavior(this.modPlayer);
+        }
+        else {
+            mod.EnableAllInputRestrictions(this.modPlayer, true);
+        }
+    }
+
+    enable() {
+        if (this.isAI) {
+            mod.AIBattlefieldBehavior(this.modPlayer);
+        }
+        else {
+            mod.EnableAllInputRestrictions(this.modPlayer, false);
+        }
+    }
 }
 
 class PlayerUI {
+    SCORE_BAR_WIDTH: number = 400;
     rootWidget?: mod.UIWidget;
     progressBarWidget?: mod.UIWidget;
     playerIndicatorWidget?: mod.UIWidget;
     playerPlacementWidget?: mod.UIWidget;
     enemyIndicatorWidget?: mod.UIWidget;
     enemyPlacementWidget?: mod.UIWidget;
-    SCORE_BAR_WIDTH: number = 400;
     readyButton?: mod.UIWidget;
+    readyButtonLabel?: mod.UIWidget;
 
     constructor(player: mod.Player) {
-       const rootName: string = "ui_root_" + player;
-       const playerPlacementName: string = "ui_player_placement_" + player;
-       const enemyPlacementName: string = "ui_enemy_placement_" + player;
-       const progressBarName: string = "ui_progress_bar_" + player;
-       const playerIndicatorName: string = "ui_player_indicator_" + player;
-       const enemyIndicatorName: string = "ui_enemy_indicator_" + player;
+        const rootName: string = "ui_root_" + player;
+        const playerPlacementName: string = "ui_player_placement_" + player;
+        const enemyPlacementName: string = "ui_enemy_placement_" + player;
+        const progressBarName: string = "ui_progress_bar_" + player;
+        const playerIndicatorName: string = "ui_player_indicator_" + player;
+        const enemyIndicatorName: string = "ui_enemy_indicator_" + player;
+        const readyButtonName: string = "ui_ready_button_" + player;
+        const readyButtonLabelName: string = "ui_ready_button_label_" + player;
 
         mod.AddUIContainer(
             rootName, // name
@@ -246,8 +397,8 @@ class PlayerUI {
         this.playerIndicatorWidget = mod.FindUIWidgetWithName(enemyIndicatorName);
 
         mod.AddUIButton(
-            "readyButton", // name
-            mod.CreateVector(-150, 0, 0), // position
+            readyButtonName, // name
+            mod.CreateVector(0, 0, 0), // position
             mod.CreateVector(300, 60, 0), // size
             mod.UIAnchor.Center, // anchor
             mod.GetUIRoot(), // parent
@@ -255,7 +406,7 @@ class PlayerUI {
             5, // padding
             COLORS.gray, // bgColor
             0.8, // bgAlpha
-            mod.UIBgFill.OutlineThick, // bgFill
+            mod.UIBgFill.Solid, // bgFill
             true, // Enabled
             COLORS.gray, // baseColor green
             1.0, // baseAlpha
@@ -269,12 +420,12 @@ class PlayerUI {
             1.0, // focusAlpha
             player
         );
-        this.readyButton = mod.FindUIWidgetWithName("readyButton");
+        this.readyButton = mod.FindUIWidgetWithName(readyButtonName);
         
         if (!this.readyButton) return;
         // Add button label
         mod.AddUIText(
-            "readyButtonLabel", // name
+            readyButtonLabelName, // name
             mod.CreateVector(0, 0, 0), // position
             mod.CreateVector(300, 60, 0), // size
             mod.UIAnchor.Center, // anchor
@@ -284,13 +435,14 @@ class PlayerUI {
             mod.CreateVector(0, 0, 0), // bgColor
             0, // bgAlpha
             mod.UIBgFill.None, // bgFill
-            mod.Message(mod.stringkeys.ui_button_label_ready), // message
+            mod.Message(mod.stringkeys.ui_button_label_ready, 0, 1), // message
             24, // textSize
             COLORS.white, // textColor
             1.0, // textAlpha
             mod.UIAnchor.Center, // textAnchor
             player
         );
+        this.readyButtonLabel = mod.FindUIWidgetWithName(readyButtonLabelName);
     }
 
     updateScores(player: Player, enemy: Player, targetScore: number) {
@@ -334,6 +486,17 @@ class PlayerUI {
             }
         }
     }
+
+    updateReadyLabel(numReady: number, numTotal: number) {
+        if (this.readyButtonLabel) {
+            mod.SetUITextLabel(this.readyButtonLabel, mod.Message(mod.stringkeys.ui_button_label_ready, numReady, numTotal));
+        }
+    }
+
+    hideReadyButton() {
+        if (this.readyButton) mod.SetUIWidgetVisible(this.readyButton, false);
+        if (this.readyButtonLabel) mod.SetUIWidgetVisible(this.readyButtonLabel, false);
+    }
 }
 
 function getPlayerFromModPlayer(modPlayer: mod.Player) {
@@ -341,74 +504,74 @@ function getPlayerFromModPlayer(modPlayer: mod.Player) {
     return PLAYERS[id];
 }
 
-// ****************************** GAME LOGIC ****************************** //
-const isReadyButtonName = "isReadyButton";
-export function OnGameModeStarted() {
-    SCOREBOARD = new Scoreboard();
-    mod.SetSpawnMode(mod.SpawnModes.AutoSpawn);
-    
-    mod.EnableUIInputMode(true);
-}
+// ****************************** GAME COUNTDOWN ****************************** //
+class GameCountdown {
+    rootContainer?: mod.UIWidget;
+    countdownText?: mod.UIWidget;
+    countdownNumber: number = 5;
 
-var NumTeams = 0;
-export function OnPlayerJoinGame(modPlayer: mod.Player) {
-    const id = mod.GetObjId(modPlayer);
-    const player = new Player(modPlayer);
-    PLAYERS[id] = player;
-    mod.SetTeam(modPlayer, mod.GetTeam(++NumTeams));
-    player.applySniperLoadout();
-}
+    constructor() {
+        const rootName: string = "countdown_root_container";
+        const countdownTextName: string = "countdown_text";
 
-export function OnPlayerDied(
-    eventPlayer: mod.Player,
-    eventOtherPlayer: mod.Player,
-    eventDeathType: mod.DeathType,
-    eventWeaponUnlock: mod.WeaponUnlock
-) {
-    const player = getPlayerFromModPlayer(eventPlayer);
-    player.stats.deaths++;
-    SCOREBOARD.updatePlayerScoreboard(player);
-}
+        mod.AddUIContainer(
+            rootName, // name
+            mod.CreateVector(0, 40, 0), // position
+            mod.CreateVector(160, 60, 0), // size
+            mod.UIAnchor.TopCenter, // anchor
+            mod.GetUIRoot(), // parent
+            false, // visible
+            0, // padding
+            COLORS.black, // bgColor
+            0.8, // bgAlpha
+            mod.UIBgFill.None, // bgFill
+        );
+        this.rootContainer = mod.FindUIWidgetWithName(rootName);
 
-export function OnPlayerEarnedKill(
-    eventPlayer: mod.Player,
-    eventOtherPlayer: mod.Player,
-    eventDeathType: mod.DeathType,
-    eventWeaponUnlock: mod.WeaponUnlock
-) {
-    const player = getPlayerFromModPlayer(eventPlayer);
-    player.stats.kills++;
-    player.stats.score++;
-    if (mod.EventDeathTypeCompare(eventDeathType, mod.PlayerDeathTypes.Headshot)) {
-        player.stats.headshots++;
-        player.stats.score++;
+        if (!this.rootContainer) return;
+
+        mod.AddUIText(
+            countdownTextName, // name
+            mod.CreateVector(0, 0, 0), // position
+            mod.CreateVector(150, 50, 0), // size
+            mod.UIAnchor.Center, // anchor
+            this.rootContainer, // parent
+            false, // visible
+            2, // padding
+            COLORS.black, // bgColor
+            0.5, // bgAlpha
+            mod.UIBgFill.Blur, // bgFill
+            mod.Message(mod.stringkeys.ui_countdown_label, this.countdownNumber), // message
+            32, // textSize
+            COLORS.white, // textColor
+            1, // textAlpha
+            mod.UIAnchor.Center // textAnchor
+        )
+        this.countdownText = mod.FindUIWidgetWithName(countdownTextName);
     }
-    else if (mod.EventDeathTypeCompare(eventDeathType, mod.PlayerDeathTypes.Weapon) === false) {
-        mod.DisplayNotificationMessage(mod.Message(mod.stringkeys.killed_player_with_knife, eventOtherPlayer), eventPlayer);
-    }
-    SCOREBOARD.updatePlayerScoreboard(player);
-    const sortedPlayers = Object.values(PLAYERS).sort((a, b) => b.stats.score - a.stats.score); // highest score first
-    sortedPlayers.forEach((p: Player, index) => {
-        p.stats.placement = index + 1;
-    })
-    const bestPlayer = sortedPlayers[0];
-    // update player ui to show their score compared to the best player in the lobby (that isn't them)
-    Object.values(PLAYERS).forEach((p: Player) => {
-        if (bestPlayer.equals(p)) {
-            p.updateUI(sortedPlayers[1], POINTS_TO_WIN);
+
+    async beginCountdown() {
+        if (this.countdownText) {
+            let timeRemaining = this.countdownNumber;
+            while (timeRemaining > 0) {
+                mod.SetUITextLabel(this.countdownText, mod.Message(mod.stringkeys.ui_countdown_label, timeRemaining));
+                timeRemaining--;
+                // Flash effect
+                for (let flash = 0; flash < 4; flash++) {
+                    mod.SetUITextAlpha(this.countdownText, flash % 2 === 0 ? 1.0 : 0.3);
+                    await mod.Wait(0.125);
+                }
+            }
         }
-        else {
-            p.updateUI(bestPlayer, POINTS_TO_WIN);
-        }
-    })
-
-    if (player.stats.score >= POINTS_TO_WIN) {
-        mod.EndGameMode(player.modPlayer);
     }
-}
 
-export function OnPlayerEarnedKillAssist(eventPlayer: mod.Player, eventOtherPlayer: mod.Player) {
-    const player = getPlayerFromModPlayer(eventPlayer);
-    player.stats.assists++;
-    SCOREBOARD.updatePlayerScoreboard(player);
+    show() {
+        if (this.rootContainer) mod.SetUIWidgetVisible(this.rootContainer, true);
+        if (this.countdownText) mod.SetUIWidgetVisible(this.countdownText, true);
+    }
+
+    hide() {
+        if (this.rootContainer) mod.SetUIWidgetVisible(this.rootContainer, false);
+        if (this.countdownText) mod.SetUIWidgetVisible(this.countdownText, false);
+    }
 }
