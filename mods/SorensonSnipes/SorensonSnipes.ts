@@ -35,6 +35,7 @@ function enableAllPlayers() {
   players.forEach((player) => {
     player.enable();
     player.ui.hideReadyButton();
+    mod.EnableUIInputMode(false, player.modPlayer);
   });
 }
 
@@ -53,7 +54,7 @@ function arePlayersReady() {
   if (totalHumans === 0) return false;
   players.forEach((player) => {
     if (player.isHuman) {
-      player.ui.updateReadyLabel(totalReady, totalHumans, player.isReady);
+      player.ui.updateReadyLabel(totalReady, totalHumans);
     }
   });
 
@@ -63,8 +64,10 @@ function arePlayersReady() {
 export function OnPlayerJoinGame(modPlayer: mod.Player) {
   const id = mod.GetObjId(modPlayer);
   const player = new Player(modPlayer);
-  PLAYERS[id] = player;
-  mod.SetTeam(modPlayer, mod.GetTeam(0));
+  if (!PLAYERS[id]) {
+    PLAYERS[id] = player;
+    player.setTeam(0);
+  }
   if (!GameStarted) {
     player.disable();
   } else {
@@ -142,9 +145,9 @@ export function OnPlayerUIButtonEvent(
   const player = getPlayerFromModPlayer(eventPlayer);
   const buttonName = mod.GetUIWidgetName(eventUIWidget);
   mod.DisplayNotificationMessage(
-    player.isReady ? mod.Message(mod.stringkeys.ui_not_ready) : mod.Message(mod.stringkeys.ui_ready)
+    player.isReady ? mod.Message(mod.stringkeys.ui_not_ready) : mod.Message(mod.stringkeys.ui_ready), player.modPlayer
   );
-  if (buttonName === "ui_ready_button_" + eventPlayer) {
+  if (buttonName.includes("ui_ready_button")) {
     if (eventUIButtonEvent === mod.UIButtonEvent.ButtonDown) {
       player.toggleReady();
     }
@@ -264,6 +267,19 @@ class Player {
       mod.EnableAllInputRestrictions(this.modPlayer, false);
     }
   }
+
+  setTeam(teamId: number): void;
+  setTeam(team: mod.Team): void;
+  setTeam(team?: number | mod.Team): void {
+    if (typeof team === "number") {
+        this.team = mod.GetTeam(team)
+        mod.SetTeam(this.modPlayer, this.team);
+    }
+    else if (team) {
+        this.team = team;
+        mod.SetTeam(this.modPlayer, this.team);
+    }
+  }
 }
 
 class PlayerUI {
@@ -274,6 +290,7 @@ class PlayerUI {
   playerPlacementWidget?: mod.UIWidget;
   enemyIndicatorWidget?: mod.UIWidget;
   enemyPlacementWidget?: mod.UIWidget;
+  readyButtonContainer?: mod.UIWidget;
   readyButton?: mod.UIWidget;
   readyButtonLabel?: mod.UIWidget;
 
@@ -284,6 +301,7 @@ class PlayerUI {
     const progressBarName: string = "ui_progress_bar_" + player;
     const playerIndicatorName: string = "ui_player_indicator_" + player;
     const enemyIndicatorName: string = "ui_enemy_indicator_" + player;
+    const readyButtonContainerName: string = "ui_ready_button_container_" + player;
     const readyButtonName: string = "ui_ready_button_" + player;
     const readyButtonLabelName: string = "ui_ready_button_label_" + player;
 
@@ -397,12 +415,29 @@ class PlayerUI {
     );
     this.playerIndicatorWidget = mod.FindUIWidgetWithName(enemyIndicatorName);
 
+    mod.AddUIContainer(
+        readyButtonContainerName, // name
+        mod.CreateVector(0, 0, 0), // position
+        mod.CreateVector(350, 100, 0), // size
+        mod.UIAnchor.Center, // anchor
+        mod.GetUIRoot(), // parent
+        true, // visible
+        0, // padding
+        COLORS.black, // bgColor
+        0, // bgAlpha
+        mod.UIBgFill.None, // bgFill
+        player // player
+    );
+    this.readyButtonContainer = mod.FindUIWidgetWithName(readyButtonContainerName);
+    
+    if (!this.readyButtonContainer) return;
+
     mod.AddUIButton(
       readyButtonName, // name
       mod.CreateVector(0, 0, 0), // position
       mod.CreateVector(300, 60, 0), // size
       mod.UIAnchor.Center, // anchor
-      mod.GetUIRoot(), // parent
+      this.readyButtonContainer, // parent
       true, // visible
       5, // padding
       COLORS.gray, // bgColor
@@ -423,14 +458,13 @@ class PlayerUI {
     );
     this.readyButton = mod.FindUIWidgetWithName(readyButtonName);
 
-    if (!this.readyButton) return;
     // Add button label
     mod.AddUIText(
       readyButtonLabelName, // name
       mod.CreateVector(0, 0, 0), // position
       mod.CreateVector(300, 60, 0), // size
       mod.UIAnchor.Center, // anchor
-      this.readyButton, // parent
+      this.readyButtonContainer, // parent
       true, // visible
       0, // padding
       COLORS.black, // bgColor
@@ -496,19 +530,16 @@ class PlayerUI {
     }
   }
 
-  updateReadyLabel(numReady: number = 0, numTotal: number = 1, isReady: boolean = false) {
+  updateReadyLabel(numReady: number = 0, numTotal: number = 1) {
     if (this.readyButtonLabel) {
-      // mod.SetUITextLabel(this.readyButtonLabel, mod.Message(mod.stringkeys.ui_button_label_ready, numReady, numTotal));
-      mod.SetUITextLabel(
-        this.readyButtonLabel,
-        isReady ? mod.Message(mod.stringkeys.ui_ready) : mod.Message(mod.stringkeys.ui_not_ready)
-      );
+      mod.SetUITextLabel(this.readyButtonLabel, mod.Message(mod.stringkeys.ui_button_label_ready, numReady, numTotal));
     }
   }
 
   hideReadyButton() {
-    if (this.readyButton) mod.SetUIWidgetVisible(this.readyButton, false);
     if (this.readyButtonLabel) mod.SetUIWidgetVisible(this.readyButtonLabel, false);
+    if (this.readyButton) mod.SetUIWidgetVisible(this.readyButton, false);
+    if (this.readyButtonContainer) mod.SetUIWidgetVisible(this.readyButtonContainer, false);
   }
 }
 
@@ -569,13 +600,10 @@ class GameCountdown {
       while (timeRemaining > 0) {
         mod.SetUITextLabel(this.countdownText, mod.Message(mod.stringkeys.ui_countdown_label, timeRemaining));
         timeRemaining--;
-        // Flash effect
-        for (let flash = 0; flash < 4; flash++) {
-          mod.SetUITextAlpha(this.countdownText, flash % 2 === 0 ? 1.0 : 0.3);
-          await mod.Wait(0.125);
-        }
+        await mod.Wait(1);
       }
     }
+    return Promise.resolve();
   }
 
   show() {
